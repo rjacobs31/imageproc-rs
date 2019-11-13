@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::u8;
 
+/// Thresholds a grayscale image, based on the median of the intensities.
 fn median_threshold(img: &ImageBuffer<Luma<u8>, Vec<u8>>) -> ImageBuffer<Luma<u8>, Vec<u8>> {
     let (width, height) = img.dimensions();
     let mut values: Vec<_> = img.pixels().map(|Luma([val])| val).collect();
@@ -22,6 +23,7 @@ fn median_threshold(img: &ImageBuffer<Luma<u8>, Vec<u8>>) -> ImageBuffer<Luma<u8
     })
 }
 
+/// Thresholds a grayscale image, based on the average of the intensities.
 fn average_threshold(img: &ImageBuffer<Luma<u8>, Vec<u8>>) -> ImageBuffer<Luma<u8>, Vec<u8>> {
     let (width, height) = img.dimensions();
     let total: f64 = img.pixels().map(|Luma([val])| f64::from(*val)).sum::<f64>();
@@ -92,6 +94,9 @@ fn dilate(
 }
 
 #[cfg(not(old))]
+/// Performs dilation on a grayscale image. If the image
+/// is already thresholded, then this is equivalent to
+/// dilating a bit image.
 fn dilate(
     img: &ImageBuffer<Luma<u8>, Vec<u8>>,
     structuring_element: [[bool; 3]; 3],
@@ -116,10 +121,6 @@ fn erode(
     for y in 0..height {
         for x in 0..width {
             let mut local_min = u8::MAX;
-
-            // Determine the start and end indices for the image and
-            // the structuring element, in order to avoid out-of-bounds
-            // panics.
             let (x_min, el_x_min) = if x < offset as u32 {
                 (0, offset - x as usize)
             } else {
@@ -163,6 +164,9 @@ fn erode(
 }
 
 #[cfg(not(old))]
+/// Performs erosion on a grayscale image. If the image
+/// is already thresholded, then this is equivalent to
+/// erosion a bit image.
 fn erode(
     img: &ImageBuffer<Luma<u8>, Vec<u8>>,
     structuring_element: [[bool; 3]; 3],
@@ -175,6 +179,11 @@ fn erode(
     )
 }
 
+/// Performs dilation and erosion separately on an image,
+/// then subtracts the eroded image from the dilated image.
+///
+/// This serves no practical purpose and only exists for the
+/// purpose of looking cool.
 fn dilate_sub_erode(
     img: &ImageBuffer<Luma<u8>, Vec<u8>>,
     structuring_element: [[bool; 3]; 3],
@@ -195,6 +204,8 @@ fn dilate_sub_erode(
     buffer
 }
 
+/// Folds the function `f` over all pixels in the neighbourhood
+/// of a structuring element around each pixel.
 fn fold_over_structuring_element<F>(
     img: &ImageBuffer<Luma<u8>, Vec<u8>>,
     structuring_element: [[bool; 3]; 3],
@@ -210,6 +221,9 @@ where
     let offset = full_offset / 2;
     for y in 0..height {
         for x in 0..width {
+            // Determine the start and end indices for the image and
+            // the structuring element, in order to avoid out-of-bounds
+            // panics.
             let (x_min, el_x_min) = if x < offset as u32 {
                 (0, offset - x as usize)
             } else {
@@ -255,6 +269,8 @@ where
 
 fn main() {
     let structuring_element = [[true; 3]; 3];
+
+    // Setup the command-line argument parsing.
     let matches = App::new("imageproc")
         .arg(
             Arg::with_name("threshold")
@@ -295,6 +311,7 @@ fn main() {
 
     let start_time = Instant::now();
 
+    // Read and potentially threshold the image.
     let img = image::open(filepath)
         .as_ref()
         .map(grayscale)
@@ -304,8 +321,8 @@ fn main() {
             _ => x,
         })
         .unwrap();
-    img.save_with_format("kitty_gray.png", image::ImageFormat::PNG)
-        .expect("could not save image");
+
+    // Process the image.
     let processed_img = match op {
         "dilate" => dilate(&img, structuring_element),
         "erode" => erode(&img, structuring_element),
@@ -315,6 +332,7 @@ fn main() {
         _ => panic!("unknown op specified"),
     };
 
+    // Determine the filename to save as if not specified.
     let outpath = matches.value_of_os("outfile").map_or_else(
         || {
             let mut outfile = filepath.file_stem().unwrap().to_os_string();
